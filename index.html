@@ -1,1 +1,138 @@
-
+<!doctype html>
+<html lang="ms">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QR Restaurant Manager</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f4f6f4;--ink:#18251e;--muted:#64736a;--green:#176b45;--line:#dce5de;--card:#fff;--red:#b42318}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px system-ui,Arial}
+header{background:#163d2b;color:white;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+header small{color:#c5d8cc}.wrap{max-width:1150px;margin:auto;padding:18px}
+nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+button,.btn{border:0;border-radius:10px;padding:11px 14px;background:var(--green);color:white;font-weight:650;cursor:pointer}
+button.secondary{background:#e5eee8;color:#1d4c34}button.danger{background:#b42318}
+input,select,textarea{width:100%;padding:11px;border:1px solid var(--line);border-radius:9px;background:white;font:inherit}
+label{display:block;font-size:13px;color:var(--muted);margin:8px 0 5px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px;margin-bottom:12px}
+.metric{font-size:27px;font-weight:800;margin-top:5px}.muted{color:var(--muted);font-size:13px}
+.row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.hidden{display:none!important}.menuitem{display:flex;justify-content:space-between;gap:12px;align-items:center;border-bottom:1px solid var(--line);padding:12px 0}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:10px;border-bottom:1px solid var(--line);font-size:14px}
+.status{padding:4px 8px;border-radius:20px;background:#e5eee8;font-size:12px}
+#notice{padding:10px;border-radius:9px;margin:10px 0;background:#fff4d6;color:#654b00}
+@media(max-width:600px){.wrap{padding:12px}header{padding:14px}.metric{font-size:23px}td,th{padding:7px;font-size:12px}}
+</style>
+</head>
+<body>
+<header><div><b>🍗 QR Restaurant Manager</b><br><small>Order • Sales • Expenses • Closing</small></div><div id="sessionLabel">Belum disambungkan</div></header>
+<div class="wrap">
+<div id="setup" class="card">
+<h2>Sambungkan Cloud Database</h2>
+<p class="muted">Masukkan URL dan anon key projek Supabase. Maklumat ini disimpan dalam browser ini sahaja.</p>
+<label>Supabase Project URL</label><input id="sbUrl" placeholder="https://xxxx.supabase.co">
+<label>Supabase anon public key</label><input id="sbKey" placeholder="eyJ...">
+<button onclick="connect()">Sambung</button>
+<div class="muted">Jangan masukkan service_role key di sini.</div>
+</div>
+<div id="auth" class="card hidden">
+<h2>Log masuk</h2><label>Email akaun</label><input id="email" type="email">
+<label>Password</label><input id="password" type="password">
+<button onclick="login()">Log masuk</button>
+</div>
+<div id="app" class="hidden">
+<nav>
+<button class="secondary" onclick="show('dashboard')">Dashboard</button>
+<button class="secondary" onclick="show('orders')">Pesanan</button>
+<button class="secondary" onclick="show('menu')">Menu</button>
+<button class="secondary" onclick="show('expense')">Duit Keluar</button>
+<button class="secondary" onclick="show('closing')">Closing</button>
+<button class="secondary" onclick="show('customer')">QR Pelanggan</button>
+<button class="danger" onclick="logout()">Log keluar</button>
+</nav>
+<div id="notice" class="hidden"></div>
+<section id="dashboard">
+<h2>Dashboard Hari Ini</h2>
+<div class="grid">
+<div class="card"><div class="muted">Jumlah jualan</div><div class="metric" id="sales">RM0.00</div></div>
+<div class="card"><div class="muted">Pesanan</div><div class="metric" id="orderCount">0</div></div>
+<div class="card"><div class="muted">Tunai diterima</div><div class="metric" id="cashSales">RM0.00</div></div>
+<div class="card"><div class="muted">QR direkodkan</div><div class="metric" id="qrSales">RM0.00</div></div>
+</div>
+<div class="card"><div class="row"><h3>Pesanan terkini</h3><button onclick="refresh()">Muat semula</button></div><div id="recent"></div></div>
+</section>
+<section id="orders" class="hidden">
+<h2>Pesanan</h2><div class="card"><div class="row"><h3>Senarai pesanan hari ini</h3><button onclick="refresh()">Muat semula</button></div><div id="orderList"></div></div>
+</section>
+<section id="menu" class="hidden">
+<h2>Pengurusan Menu</h2><div class="card">
+<label>Nama menu</label><input id="mName" placeholder="Contoh: Ayam penyet">
+<label>Harga (RM)</label><input id="mPrice" type="number" step="0.01" min="0">
+<label>Kategori</label><input id="mCategory" placeholder="Makanan / Minuman">
+<button onclick="addMenu()">Tambah menu</button></div><div class="card" id="menuList"></div>
+</section>
+<section id="expense" class="hidden">
+<h2>Rekod Duit Keluar</h2><div class="card">
+<label>Tujuan perbelanjaan</label><input id="eDesc" placeholder="Contoh: beli ayam / ais / gas">
+<label>Jumlah (RM)</label><input id="eAmount" type="number" step="0.01" min="0">
+<label>Kaedah bayaran</label><select id="eMethod"><option value="cash">Tunai</option><option value="qr">QR / Bank</option></select>
+<label>Nama pekerja</label><input id="eStaff" placeholder="Nama pekerja bertugas">
+<button onclick="addExpense()">Simpan duit keluar</button></div><div class="card"><h3>Perbelanjaan hari ini</h3><div id="expenseList"></div></div>
+</section>
+<section id="closing" class="hidden">
+<h2>Daily Closing</h2><div class="card">
+<div id="closingSummary"></div>
+<label>Tunai sebenar dalam laci (RM)</label><input id="actualCash" type="number" step="0.01" min="0">
+<label>QR sebenar mengikut rekod bank (RM)</label><input id="actualQr" type="number" step="0.01" min="0">
+<label>Nama pekerja closing</label><input id="closingStaff" placeholder="Nama pekerja">
+<label>Catatan / sebab perbezaan</label><textarea id="closingNote"></textarea>
+<button onclick="submitClosing()">Hantar closing</button></div><div class="card"><h3>Sejarah closing</h3><div id="closingList"></div></div>
+</section>
+<section id="customer" class="hidden">
+<h2>Menu Pelanggan</h2><div class="card"><p class="muted">Buka pautan pelanggan pada telefon pelanggan atau jana QR menggunakan URL laman web yang telah diterbitkan.</p>
+<label>Jenis pesanan</label><select id="orderType"><option value="dine_in">Dine-in</option><option value="takeaway">Takeaway</option></select>
+<label>Nombor meja (untuk dine-in)</label><input id="tableNo" placeholder="Contoh: 5">
+<div id="customerMenu"></div><h3>Jumlah: <span id="cartTotal">RM0.00</span></h3>
+<label>Nama / nombor panggilan</label><input id="custName" placeholder="Nama pelanggan">
+<label>Nota pesanan</label><textarea id="custNote" placeholder="Kurang pedas, tiada bawang..."></textarea>
+<label>Kaedah bayaran</label><select id="payMethod"><option value="cash">Tunai di kaunter</option><option value="qr">QR DuitNow (perlu pengesahan)</option></select>
+<button onclick="placeOrder()">Hantar pesanan</button><div id="customerResult"></div></div>
+</section>
+</div>
+</div>
+<script>
+let sb=null, user=null, profile=null, menus=[], cart={};
+const $=id=>document.getElementById(id);
+const money=n=>'RM'+Number(n||0).toFixed(2);
+function msg(t){$('notice').textContent=t;$('notice').classList.remove('hidden')}
+function connect(){
+ const u=$('sbUrl').value.trim(),k=$('sbKey').value.trim(); if(!u||!k)return alert('Masukkan URL dan anon key.');
+ localStorage.setItem('qr_sb_url',u);localStorage.setItem('qr_sb_key',k);sb=window.supabase.createClient(u,k);$('setup').classList.add('hidden');$('auth').classList.remove('hidden');
+}
+async function init(){let u=localStorage.getItem('qr_sb_url'),k=localStorage.getItem('qr_sb_key');if(u&&k){sb=window.supabase.createClient(u,k);$('setup').classList.add('hidden');$('auth').classList.remove('hidden');let {data}=await sb.auth.getSession();if(data.session){user=data.session.user;await enter()}}}
+async function login(){let {data,error}=await sb.auth.signInWithPassword({email:$('email').value,password:$('password').value});if(error)return alert(error.message);user=data.user;await enter()}
+async function logout(){await sb.auth.signOut();location.reload()}
+async function enter(){let {data,error}=await sb.from('profiles').select('*').eq('id',user.id).single();if(error)return alert('Profil pengguna belum disediakan. Semak SQL setup dan profiles.');profile=data;$('auth').classList.add('hidden');$('app').classList.remove('hidden');$('sessionLabel').textContent=(profile.display_name||user.email)+' • '+profile.role;await refresh()}
+function show(id){document.querySelectorAll('#app section').forEach(x=>x.classList.add('hidden'));$(id).classList.remove('hidden');if(id==='customer')loadCustomerMenu();if(id==='menu')loadMenu();if(id==='expense')loadExpenses();if(id==='closing')loadClosing()}
+async function refresh(){await loadDashboard();await loadOrders();await loadMenu()}
+async function todayOrders(){let d=new Date();let start=new Date(d.getFullYear(),d.getMonth(),d.getDate()).toISOString();return await sb.from('orders').select('*,order_items(*)').gte('created_at',start).order('created_at',{ascending:false})}
+async function loadDashboard(){let {data,error}=await todayOrders();if(error)return msg(error.message);let paid=(data||[]).filter(o=>o.status!=='cancelled');let cash=paid.filter(o=>o.payment_method==='cash'&&o.payment_status==='paid').reduce((s,o)=>s+Number(o.total),0);let qr=paid.filter(o=>o.payment_method==='qr'&&o.payment_status==='paid').reduce((s,o)=>s+Number(o.total),0);$('sales').textContent=money(cash+qr);$('orderCount').textContent=paid.length;$('cashSales').textContent=money(cash);$('qrSales').textContent=money(qr);$('recent').innerHTML=tableOrders(paid.slice(0,8))}
+function tableOrders(rows){if(!rows.length)return '<p class="muted">Belum ada pesanan.</p>';return '<table><tr><th>No.</th><th>Jenis</th><th>Jumlah</th><th>Bayaran</th><th>Status</th></tr>'+rows.map(o=>`<tr><td>${o.order_no}</td><td>${o.order_type}</td><td>${money(o.total)}</td><td>${o.payment_method} / ${o.payment_status}</td><td>${o.status}</td></tr>`).join('')+'</table>'}
+async function loadOrders(){let {data,error}=await todayOrders();if(error)return;$('orderList').innerHTML=(data||[]).map(o=>`<div class="menuitem"><div><b>${o.order_no}</b><div class="muted">${o.order_type} • ${money(o.total)} • ${o.payment_method}</div><div class="muted">${o.customer_name||'Walk-in'} • ${o.status}</div></div><div><select onchange="updateOrder('${o.id}',this.value)"><option ${o.status==='new'?'selected':''} value="new">New</option><option ${o.status==='preparing'?'selected':''} value="preparing">Preparing</option><option ${o.status==='ready'?'selected':''} value="ready">Ready</option><option ${o.status==='completed'?'selected':''} value="completed">Completed</option><option ${o.status==='cancelled'?'selected':''} value="cancelled">Cancelled</option></select><button class="secondary" onclick="markPaid('${o.id}')">Sahkan bayaran</button></div></div>`).join('')||'<p class="muted">Tiada pesanan.</p>'}
+async function updateOrder(id,status){let {error}=await sb.from('orders').update({status}).eq('id',id);if(error)alert(error.message);else{await audit('order_status',id,{status});refresh()}}
+async function markPaid(id){let {error}=await sb.from('orders').update({payment_status:'paid'}).eq('id',id);if(error)alert(error.message);else{await audit('payment_confirmed',id,{});refresh()}}
+async function loadMenu(){let {data,error}=await sb.from('menu_items').select('*').order('category').order('name');if(error)return;menus=data||[];$('menuList').innerHTML=menus.map(m=>`<div class="menuitem"><div><b>${m.name}</b><div class="muted">${m.category||''} • ${money(m.price)}</div></div><button class="secondary" onclick="toggleMenu('${m.id}',${!m.active})">${m.active?'Nyahaktif':'Aktifkan'}</button></div>`).join('')||'Belum ada menu.'}
+async function addMenu(){let name=$('mName').value.trim(),price=Number($('mPrice').value);if(!name||price<=0)return alert('Isi nama dan harga yang sah.');let {error}=await sb.from('menu_items').insert({name,price,category:$('mCategory').value,active:true});if(error)return alert(error.message);$('mName').value='';$('mPrice').value='';await audit('menu_created',null,{name,price});loadMenu()}
+async function toggleMenu(id,active){let {error}=await sb.from('menu_items').update({active}).eq('id',id);if(error)alert(error.message);else{await audit('menu_updated',id,{active});loadMenu()}}
+async function addExpense(){let amount=Number($('eAmount').value),description=$('eDesc').value.trim();if(!description||amount<=0)return alert('Isi tujuan dan jumlah.');let {error}=await sb.from('expenses').insert({description,amount,payment_method:$('eMethod').value,staff_name:$('eStaff').value});if(error)return alert(error.message);await audit('expense_created',null,{description,amount});$('eAmount').value='';$('eDesc').value='';loadExpenses()}
+async function loadExpenses(){let d=new Date();let start=new Date(d.getFullYear(),d.getMonth(),d.getDate()).toISOString();let {data,error}=await sb.from('expenses').select('*').gte('created_at',start).order('created_at',{ascending:false});if(error)return;$('expenseList').innerHTML=(data||[]).map(e=>`<div class="menuitem"><div>${e.description}<div class="muted">${e.payment_method} • ${e.staff_name||'Tidak dinyatakan'}</div></div><b>${money(e.amount)}</b></div>`).join('')||'Tiada perbelanjaan.'}
+async function loadClosing(){let {data:orders}=await todayOrders();let rows=(orders||[]).filter(o=>o.status!=='cancelled'&&o.payment_status==='paid');let cash=rows.filter(o=>o.payment_method==='cash').reduce((s,o)=>s+Number(o.total),0);let qr=rows.filter(o=>o.payment_method==='qr').reduce((s,o)=>s+Number(o.total),0);let d=new Date();let start=new Date(d.getFullYear(),d.getMonth(),d.getDate()).toISOString();let {data:ex}=await sb.from('expenses').select('*').gte('created_at',start);let cashOut=(ex||[]).filter(e=>e.payment_method==='cash').reduce((s,e)=>s+Number(e.amount),0);let qrOut=(ex||[]).filter(e=>e.payment_method==='qr').reduce((s,e)=>s+Number(e.amount),0);let expected=cash-cashOut;window.closingCalc={cash,qr,cashOut,qrOut,expected};$('closingSummary').innerHTML=`<p>Jualan tunai: <b>${money(cash)}</b></p><p>Jualan QR disahkan: <b>${money(qr)}</b></p><p>Keluar tunai: <b>${money(cashOut)}</b></p><p>Keluar bank/QR: <b>${money(qrOut)}</b></p><hr><h3>Tunai sepatutnya dalam laci: ${money(expected)}</h3>`;let {data:cl}=await sb.from('closings').select('*').order('created_at',{ascending:false}).limit(10);$('closingList').innerHTML=(cl||[]).map(c=>`<p>${new Date(c.created_at).toLocaleString()} • ${c.staff_name} • beza tunai ${money(c.cash_variance)} • beza QR ${money(c.qr_variance)}</p>`).join('')||'Belum ada closing.'}
+async function submitClosing(){let c=window.closingCalc;if(!c)return;let actual=Number($('actualCash').value),actualQr=Number($('actualQr').value);if($('actualCash').value===''||$('actualQr').value==='')return alert('Masukkan jumlah tunai dan QR sebenar.');let payload={expected_cash:c.expected,actual_cash:actual,cash_variance:actual-c.expected,expected_qr:c.qr-c.qrOut,actual_qr:actualQr,qr_variance:actualQr-(c.qr-c.qrOut),staff_name:$('closingStaff').value,note:$('closingNote').value};let {error}=await sb.from('closings').insert(payload);if(error)return alert(error.message);await audit('daily_closing',null,payload);alert('Closing direkodkan. Semak sebarang perbezaan.');loadClosing()}
+async function loadCustomerMenu(){let {data,error}=await sb.from('menu_items').select('*').eq('active',true).order('category');if(error)return $('customerMenu').textContent=error.message;menus=data||[];$('customerMenu').innerHTML=menus.map(m=>`<div class="menuitem"><div><b>${m.name}</b><div class="muted">${m.category||''} • ${money(m.price)}</div></div><div class="row"><button class="secondary" onclick="changeCart('${m.id}',-1)">−</button><b id="qty_${m.id}">${cart[m.id]||0}</b><button onclick="changeCart('${m.id}',1)">+</button></div></div>`).join('')||'Menu belum dimasukkan.';updateTotal()}
+function changeCart(id,n){cart[id]=Math.max(0,(cart[id]||0)+n);$('qty_'+id).textContent=cart[id];updateTotal()}
+function updateTotal(){let total=menus.reduce((s,m)=>s+(cart[m.id]||0)*Number(m.price),0);$('cartTotal').textContent=money(total)}
+async function placeOrder(){let items=menus.filter(m=>(cart[m.id]||0)>0);if(!items.length)return alert('Pilih sekurang-kurangnya satu menu.');let total=items.reduce((s,m)=>s+(cart[m.id]||0)*Number(m.price),0);let method=$('payMethod').value;let payload={order_type:$('orderType').value,table_no:$('tableNo').value||null,customer_name:$('custName').value||null,customer_note:$('custNote').value||null,payment_method:method,payment_status:'pending',status:'new',total};let {data,error}=await sb.from('orders').insert(payload).select().single();if(error)return alert(error.message);let lines=items.map(m=>({order_id:data.id,menu_item_id:m.id,item_name:m.name,unit_price:m.price,quantity:cart[m.id],line_total:Number(m.price)*cart[m.id]}));let result=await sb.from('order_items').insert(lines);if(result.error){alert('Order dibuat tetapi item gagal disimpan: '+result.error.message);return}await sb.from('audit_logs').insert({action:'customer_order_created',record_id:data.id,details:{order_no:data.order_no,total}});$('customerResult').innerHTML=`<h3>Pesanan diterima: ${data.order_no}</h3><p>Jumlah ${money(total)}. ${method==='qr'?'Sila buat bayaran QR dan tunjukkan bukti kepada cashier. Pesanan belum dikira sebagai bayaran diterima sehingga disahkan.':'Sila bayar tunai di kaunter.'}</p>`;cart={};loadCustomerMenu()}
+async function audit(action,record_id,details){await sb.from('audit_logs').insert({action,record_id,details})}
+init();
+</script></body></html>
